@@ -176,13 +176,15 @@ def scraper(url, resp):
         # extract next urls and make sure they're not traps
         valid_links = extract_next_links(url, resp)
 
-        # extract words from page
+        # extract words (text) from page
         content = resp.raw_response.content.decode('utf-8')
-        tokens = content.split()
+        soup = BeautifulSoup(content, 'html.parser')
+        text = soup.get_text(separator=' ')
+        tokens = text.split()
         num_tokens = len(tokens)
 
         # update longest page pair
-        if num_tokens > longest_page_pair[1]:  # compare with the current longest word count
+        if num_tokens > longest_page_pair[1]:
             longest_page_pair = (defragmented_url, num_tokens)
 
         # count unique words excluding stop words
