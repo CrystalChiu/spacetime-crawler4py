@@ -4,6 +4,7 @@ from crawler.worker import Worker
 
 class Crawler(object):
     def __init__(self, config, restart, frontier_factory=Frontier, worker_factory=Worker):
+        print("Init. Crawler")
         self.config = config
         self.logger = get_logger("CRAWLER")
         self.frontier = frontier_factory(config, restart)
@@ -18,6 +19,7 @@ class Crawler(object):
             worker.start()
 
     def start(self):
+        print("Crawler started")
         self.start_async()
         self.join()
 
