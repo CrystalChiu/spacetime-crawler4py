@@ -7,8 +7,6 @@ import nltk
 from nltk.corpus import stopwords
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-#from urllib.robotparser import RobotFileParser
-#from urllib.parse import urlparse
 
 nltk.download('stopwords')
 
@@ -27,16 +25,6 @@ MAX_CAL_PAGES = 0
 TRAP_TIME_THRESHOLD = 60 #1 minute
 stop_words = set(stopwords.words('english'))
 
-#TODO:
-# 1. (OK) Crawl all pages with high textual information content (i think it just means pages with a lot of text...)
-# 2. (OK) Detect and avoid infinite traps (what patterns?)
-# 3. (OK) Detect and avoid sets of similar pages with no information (near duplicate? but what about pages that have one irrelevant sentence...?)
-# 4. (OK) Detect and avoid dead URLs that return a 200 status but no data (check status code and text length)
-# 5. (TT) Scraper func
-# Detect and avoid crawling very large files, especially if they have low information value (need to find threshold for "very large", low information value = mostly templating?)
-# AVOID penalties for crawling useless families of pages
-# NOTE: you must decide on a reasonable definition for a low information value page
-
 # Takes page to be crawled, determines if status 200 page has no textual content
 def is_dead_url(content):
     #TODO: log?
@@ -48,8 +36,8 @@ def is_dead_url(content):
 # Takes page to be crawled and does prelim check
 # Should not parse if page is too large or contributes low information gain
 def should_parse(url, resp):
-    threshold = 5 * 1024 * 1024 #1MB to be safe since only crawling text content
-    min_text_ratio = 0.02
+    threshold = (5 * 1024 * 1024) * 3 #1MB to be safe since only crawling text content
+    min_text_ratio = 0.015
 
     # try to get size from header if present
     try:
@@ -116,7 +104,6 @@ def normalize_url(parsed_url):
         'source',
         'entry',
         'index',
-        # 'page', # not sure if should include yet as it may lead to diff content
         'view',
         'sort',
         'filter',
@@ -188,7 +175,10 @@ def scraper(url, resp):
             longest_page_pair = (defragmented_url, num_tokens)
 
         # count unique words excluding stop words
-        filtered_tokens = [word.lower() for word in tokens if word.lower() not in stop_words]
+        filtered_tokens = [
+            word.lower() for word in tokens
+            if word.lower() not in stop_words and len(word) > 1 and re.search(r"[a-zA-Z0-9]{2,}", word)
+        ]
         word_counter.update(filtered_tokens)
 
         # update subdomain info
@@ -229,10 +219,6 @@ def extract_next_links(url, resp):
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
     soup = BeautifulSoup(resp.raw_response.content, "html.parser")
     links = []
-
-    # if not can_fetch(url):
-    #     print(f"Blocked by robots.txt: {url}")
-    #     return []
 
     # get links from a tags
     for a_tag in soup.find_all('a', href=True):
