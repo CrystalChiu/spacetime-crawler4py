@@ -18,16 +18,16 @@ seen_urls = {} # (URL, time accessed)
 longest_page_pair = ("", 0)  # (URL, word count)
 subdomain_counts = {}  # (subdomain, unique page count)
 most_common_words = [] # stores 50 most common words
-cal_page_count = 0 # how many calendar pages we run into in a row
 
 # GLOBAL CONST REFERENCES:
 MAX_CAL_PAGES = 0
 TRAP_TIME_THRESHOLD = 60 #1 minute
+MAX_TEXT_LEN_THRESHOLD = (5 * 1024 * 1024) * 3 #3MB to be safe since only crawling text content
+MIN_TEXT_RATIO_THRESHOLD = 0.015
 stop_words = set(stopwords.words('english'))
 
 # Takes page to be crawled, determines if status 200 page has no textual content
 def is_dead_url(content):
-    #TODO: log?
     soup = BeautifulSoup(content, "html.parser")
     text = soup.get_text().strip()
 
@@ -36,18 +36,16 @@ def is_dead_url(content):
 # Takes page to be crawled and does prelim check
 # Should not parse if page is too large or contributes low information gain
 def should_parse(url, resp):
-    threshold = (5 * 1024 * 1024) * 3 #1MB to be safe since only crawling text content
-    min_text_ratio = 0.015
+    global MIN_TEXT_RATIO_THRESHOLD, MAX_TEXT_LEN_THRESHOLD
 
     # try to get size from header if present
     try:
         if hasattr(resp, 'headers'):
             content_length = resp.headers.get('Content-Length')
-            content_type = resp.headers.get('Content-Type', '')
 
             if content_length is not None:
                 content_length = int(content_length)
-            if content_length > threshold:
+            if content_length > MAX_TEXT_LEN_THRESHOLD:
                 print(f"Skipping {url} - Content too large: {content_length} bytes")
             return False
 
@@ -68,7 +66,7 @@ def should_parse(url, resp):
         text_ratio = len(text_content) / content_size if content_size > 0 else 0
 
         # low ratio --> low information gain
-        if text_ratio < min_text_ratio:
+        if text_ratio < MIN_TEXT_RATIO_THRESHOLD:
             print(f"Skipping {url} - Low text_ratio {text_ratio}")
             return False
     except Exception as e:
@@ -182,7 +180,7 @@ def scraper(url, resp):
         word_counter.update(filtered_tokens)
 
         # update subdomain info
-        subdomain = parsed_url.netloc.split('.')[0]  # Extract subdomain
+        subdomain = parsed_url.netloc.split('.')[0]  # extract subdomain
         if subdomain in subdomain_counts:
             subdomain_counts[subdomain] += 1
         else:
@@ -192,20 +190,6 @@ def scraper(url, resp):
     except Exception as e:
         print(f"Error while processing URL {url}: {e}")
         return []
-
-# def can_fetch(url):
-#     """
-#     Check if a URL can be fetched based on the site's robots.txt.
-#     """
-#     parsed_url = urlparse(url)
-#     base_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
-#
-#     rp = RobotFileParser()
-#     rp.set_url(base_url)
-#     rp.read()
-#
-#     user_agent=config.user_agent
-#     return rp.can_fetch(user_agent, url)
 
 def extract_next_links(url, resp):
     # Implementation required.
@@ -253,13 +237,9 @@ def is_calendar_page(url):
     if re.search(combined_pattern, parsed.path) or re.search(combined_pattern, parsed.query):
         return True
 
-    if("ical=" in parsed.query):
-        return True
-
     return False
 
 def is_valid(url):
-    global cal_page_count
 
     # Decide whether to crawl this url or not.
     # If you decide to crawl it, return True; otherwise return False.
@@ -281,6 +261,7 @@ def is_valid(url):
         if not (domain_allowed or path_allowed):
             return False
 
+        # common signs of invalid/low info gain content
         path = parsed.path.lower()
         query = parsed.query.lower()
         if (re.search(r"/(?:uploads|files)(?:/|$)", path)
@@ -292,10 +273,12 @@ def is_valid(url):
             print(f"Skipping {url} due to heuristic match for non-text/invalid content")
             return False
 
+        # check again for calendar trap
         if is_calendar_page(url):
             print(f"Skipping {url} due to calendar trap")
             return False
 
+        # invalid file extension
         if re.match(
             r".*(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -307,6 +290,7 @@ def is_valid(url):
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", path):
             return False
 
+        # make sure we aren't scraping same page twice
         defragmented_url = urlunparse(parsed._replace(fragment=''))
         parsed_defragmented_url = urlparse(defragmented_url)
         normalized_url = normalize_url(parsed_defragmented_url)
